@@ -11,6 +11,8 @@ func main() {
 	srv.Handler = mux
 	srv.Addr = ":8080"
 
+	mux.Handle("/", http.FileServer(http.Dir(".")))
+
 	log.Printf("HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("HTTP Server ListenAndServe error: %v\n", err)
