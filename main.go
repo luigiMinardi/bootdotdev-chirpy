@@ -11,6 +11,7 @@ func main() {
 	srv.Handler = mux
 	srv.Addr = ":8080"
 
+	mux.Handle("/assets/", http.FileServer(http.Dir(".")))
 	mux.Handle("/", http.FileServer(http.Dir(".")))
 
 	log.Printf("HTTP server started on http://localhost%v\n", srv.Addr)
