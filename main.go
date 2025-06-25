@@ -31,10 +31,15 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(200)
 
-	_, err := w.Write(fmt.Appendf([]byte{}, "Hits: %v", cfg.fileServerHits.Load()))
+	_, err := w.Write(fmt.Appendf([]byte{}, `<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>`, cfg.fileServerHits.Load()))
 	if err != nil {
 		log.Printf(LogError+"/metrics failed to write with error: %v\n", err)
 	}
@@ -54,7 +59,7 @@ func main() {
 	apiCfg := &apiConfig{}
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(200)
@@ -63,8 +68,8 @@ func main() {
 			log.Printf(LogError+"/healthz failed to write with error: %v\n", err)
 		}
 	})
-	mux.HandleFunc("/metrics", apiCfg.endpointMetrics)
-	mux.HandleFunc("/reset", apiCfg.endpointReset)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
+	mux.HandleFunc("POST /admin/reset", apiCfg.endpointReset)
 
 	log.Printf("HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
