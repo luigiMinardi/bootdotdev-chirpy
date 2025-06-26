@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -67,6 +68,74 @@ func main() {
 		if err != nil {
 			log.Printf(LogError+"/healthz failed to write with error: %v\n", err)
 		}
+	})
+	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
+		type parameters struct {
+			Body string `json:"body"`
+		}
+		type returnVals struct {
+			Error string `json:"error,omitempty"`
+			Valid bool   `json:"valid,omitempty"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+		if err := decoder.Decode(&params); err != nil {
+			log.Printf(LogError+"failed to decode params: %s", err)
+			w.WriteHeader(500)
+			respBody := returnVals{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		if len(params.Body) > 140 {
+			w.WriteHeader(400)
+			respBody := returnVals{
+				Error: "Chirp is too long",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				w.WriteHeader(500)
+				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		if params.Body == "" {
+			w.WriteHeader(400)
+			respBody := returnVals{
+				Error: "Empty \"body\" field",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				w.WriteHeader(500)
+				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		w.WriteHeader(200)
+		respBody := returnVals{
+			Valid: true,
+		}
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			w.WriteHeader(500)
+			log.Printf(LogError+"failed to marshal JSON: %s", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
 	})
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.endpointReset)
