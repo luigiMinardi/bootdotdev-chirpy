@@ -107,6 +107,7 @@ func main() {
 			data, err := json.Marshal(respBody)
 			if err != nil {
 				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -120,8 +121,8 @@ func main() {
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				w.WriteHeader(500)
 				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -135,8 +136,8 @@ func main() {
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				w.WriteHeader(500)
 				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -170,8 +171,8 @@ func main() {
 		}
 		data, err := json.Marshal(respBody)
 		if err != nil {
-			w.WriteHeader(500)
 			logError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
