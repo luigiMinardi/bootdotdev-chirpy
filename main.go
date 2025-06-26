@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -19,18 +20,35 @@ const (
 	LogInfo     = ColorBlue + "INFO: " + ColorReset
 )
 
+// Logs (s) to the terminal with (arg) arguments, before (s) you have "INFO: "
+// printed in Blue
+func logInfo(s string, arg any) {
+	log.Printf(LogInfo+s, arg)
+}
+
+// Logs (s) to the terminal with (arg) arguments, before (s) you have "ERROR: "
+// printed in Red
+func logError(s string, arg any) {
+	log.Printf(LogError+s, arg)
+}
+
+// struct that holds api data like metrics.
 type apiConfig struct {
+	// metric that counts how many times all endpoints that use it have been hit
 	fileServerHits atomic.Int32
 }
 
+// Middleware function that counts how many times an endpoint has been hit, it
+// does not save it so when server resets it's restarted.
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileServerHits.Add(1)
-		log.Printf(LogInfo+"current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
+		logInfo("current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
 		next.ServeHTTP(w, r)
 	})
 }
 
+// endpoint to visualize the apiConfig.fileServerHits metric in html.
 func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(200)
@@ -42,10 +60,11 @@ func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
   </body>
 </html>`, cfg.fileServerHits.Load()))
 	if err != nil {
-		log.Printf(LogError+"/metrics failed to write with error: %v\n", err)
+		logError("/metrics failed to write with error: %v\n", err)
 	}
 }
 
+// endpoint to reset the apiConfig.fileServerHits metric to 0.
 func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	cfg.fileServerHits.Store(0)
@@ -66,7 +85,7 @@ func main() {
 		w.WriteHeader(200)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {
-			log.Printf(LogError+"/healthz failed to write with error: %v\n", err)
+			logError("/healthz failed to write with error: %v\n", err)
 		}
 	})
 	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
@@ -74,20 +93,20 @@ func main() {
 			Body string `json:"body"`
 		}
 		type returnVals struct {
-			Error string `json:"error,omitempty"`
-			Valid bool   `json:"valid,omitempty"`
+			Error       string `json:"error,omitempty"`
+			CleanedBody string `json:"cleaned_body,omitempty"`
 		}
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
-			log.Printf(LogError+"failed to decode params: %s", err)
+			logError("failed to decode params: %s", err)
 			w.WriteHeader(500)
 			respBody := returnVals{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				logError("failed to marshal JSON: %s", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -102,7 +121,7 @@ func main() {
 			data, err := json.Marshal(respBody)
 			if err != nil {
 				w.WriteHeader(500)
-				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				logError("failed to marshal JSON: %s", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -117,21 +136,45 @@ func main() {
 			data, err := json.Marshal(respBody)
 			if err != nil {
 				w.WriteHeader(500)
-				log.Printf(LogError+"failed to marshal JSON: %s", err)
+				logError("failed to marshal JSON: %s", err)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
 			return
 		}
+
+		logInfo("word: %s", params.Body)
+		words := strings.Split(params.Body, " ")
+		for wordIndex := range words {
+			logInfo("word: %s", words[wordIndex])
+			beforeK, afterK, kerfuffle := strings.Cut(words[wordIndex], "kerfuffle")
+			if kerfuffle == true {
+				words[wordIndex] = beforeK + "****" + afterK
+				continue
+			}
+			beforeS, afterS, sharbert := strings.Cut(words[wordIndex], "sharbert")
+			if sharbert == true {
+				words[wordIndex] = beforeS + "****" + afterS
+				continue
+			}
+			beforeF, afterF, fornax := strings.Cut(words[wordIndex], "fornax")
+			if fornax == true {
+				words[wordIndex] = beforeF + "****" + afterF
+				continue
+			}
+		}
+
+		params.Body = strings.Join(words, " ")
+
 		w.WriteHeader(200)
 		respBody := returnVals{
-			Valid: true,
+			CleanedBody: params.Body,
 		}
 		data, err := json.Marshal(respBody)
 		if err != nil {
 			w.WriteHeader(500)
-			log.Printf(LogError+"failed to marshal JSON: %s", err)
+			logError("failed to marshal JSON: %s", err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -142,6 +185,6 @@ func main() {
 
 	log.Printf("HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf(LogError+"HTTP Server ListenAndServe error: %v\n", err)
+		logError("HTTP Server ListenAndServe error: %v\n", err)
 	}
 }
