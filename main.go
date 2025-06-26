@@ -148,19 +148,16 @@ func main() {
 		words := strings.Split(params.Body, " ")
 		for wordIndex := range words {
 			logInfo("word: %s", words[wordIndex])
-			beforeK, afterK, kerfuffle := strings.Cut(words[wordIndex], "kerfuffle")
-			if kerfuffle == true {
-				words[wordIndex] = beforeK + "****" + afterK
+			if strings.ToLower(words[wordIndex]) == "kerfuffle" {
+				words[wordIndex] = "****"
 				continue
 			}
-			beforeS, afterS, sharbert := strings.Cut(words[wordIndex], "sharbert")
-			if sharbert == true {
-				words[wordIndex] = beforeS + "****" + afterS
+			if strings.ToLower(words[wordIndex]) == "sharbert" {
+				words[wordIndex] = "****"
 				continue
 			}
-			beforeF, afterF, fornax := strings.Cut(words[wordIndex], "fornax")
-			if fornax == true {
-				words[wordIndex] = beforeF + "****" + afterF
+			if strings.ToLower(words[wordIndex]) == "fornax" {
+				words[wordIndex] = "****"
 				continue
 			}
 		}
