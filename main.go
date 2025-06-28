@@ -1,12 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
 )
 
 const (
@@ -71,6 +77,14 @@ func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Panicf(LogError+"db connection failed with err: %v", err)
+	}
+	dbQueries := database.New(db)
+	logInfo("db queries: %v", dbQueries)
 	mux := http.NewServeMux()
 	srv := &http.Server{
 		Handler: mux,
@@ -181,7 +195,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.endpointReset)
 
-	log.Printf("HTTP server started on http://localhost%v\n", srv.Addr)
+	logInfo("HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
 		logError("HTTP Server ListenAndServe error: %v\n", err)
 	}
