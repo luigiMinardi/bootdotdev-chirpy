@@ -38,10 +38,14 @@ func logError(s string, arg any) {
 	log.Printf(LogError+s, arg)
 }
 
-// struct that holds api data like metrics.
+// struct that holds api data like metrics environments, db etc.
 type apiConfig struct {
 	// metric that counts how many times all endpoints that use it have been hit
 	fileServerHits atomic.Int32
+	// if you're in prod or dev environment
+	platform string
+	// data base
+	db *database.Queries
 }
 
 // Middleware function that counts how many times an endpoint has been hit, it
@@ -70,27 +74,49 @@ func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// endpoint to reset the apiConfig.fileServerHits metric to 0.
+// endpoint to reset the apiConfig related things on dev environment.
 func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(403)
+		w.Write([]byte("You can only reset on dev environment."))
+		return
+	}
+	err := cfg.db.DeleteAllUsers(r.Context())
+	if err != nil {
+		logError("failed to delete users", err)
+		w.WriteHeader(500)
+		w.Write([]byte("failed to reset db with err: " + err.Error()))
+		return
+	}
+	logInfo("users reset at env: %s", cfg.platform)
 	w.WriteHeader(200)
 	cfg.fileServerHits.Store(0)
+	w.Write([]byte("fileServerHits reset to 0 and database reset to initial state."))
 }
 
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Panicf(LogError + "DB_URL must be set")
+	}
+	platform := os.Getenv("PLATFORM")
+	if platform == "" {
+		log.Panicf(LogError + "PLATFORM must be set")
+	}
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Panicf(LogError+"db connection failed with err: %v", err)
 	}
 	dbQueries := database.New(db)
-	logInfo("db queries: %v", dbQueries)
 	mux := http.NewServeMux()
 	srv := &http.Server{
 		Handler: mux,
 		Addr:    ":8080",
 	}
 	apiCfg := &apiConfig{}
+	apiCfg.platform = platform
+	apiCfg.db = dbQueries
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +205,6 @@ func main() {
 
 		params.Body = strings.Join(words, " ")
 
-		w.WriteHeader(200)
 		respBody := returnVals{
 			CleanedBody: params.Body,
 		}
@@ -189,6 +214,72 @@ func main() {
 			w.WriteHeader(500)
 			return
 		}
+		w.WriteHeader(200)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
+		type parameters struct {
+			Email string `json:"email"`
+		}
+		type returnVals struct {
+			Id        string `json:"id"`
+			CreatedAt string `json:"created_at"`
+			UpdatedAt string `json:"updated_at"`
+			Email     string `json:"email"`
+		}
+		type returnError struct {
+			Error string `json:"error"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+		if err := decoder.Decode(&params); err != nil {
+			logError("failed to decode params: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		user, err := apiCfg.db.CreateUser(r.Context(), params.Email)
+		if err != nil {
+			logError("failed to create user: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		respBody := returnVals{
+			Id:        user.ID.String(),
+			CreatedAt: user.CreatedAt.String(),
+			UpdatedAt: user.UpdatedAt.String(),
+			Email:     user.Email,
+		}
+
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			logError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(201)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
