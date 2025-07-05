@@ -234,13 +234,9 @@ func main() {
 			w.Write(data)
 			return
 		}
-		nid := uuid.NullUUID{
-			UUID:  id,
-			Valid: true,
-		}
 		chirpParams := database.CreateChirpParams{
 			Body:   params.Body,
-			UserID: nid,
+			UserID: id,
 		}
 		chirp, err := apiCfg.db.CreateChirp(r.Context(), chirpParams)
 		if err != nil {
@@ -264,7 +260,7 @@ func main() {
 			CreatedAt: chirp.CreatedAt.String(),
 			UpdatedAt: chirp.UpdatedAt.String(),
 			Body:      chirp.Body,
-			UserID:    chirp.UserID.UUID.String(),
+			UserID:    chirp.UserID.String(),
 		}
 
 		data, err := json.Marshal(respBody)
