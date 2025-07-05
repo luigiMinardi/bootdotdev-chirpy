@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
@@ -88,6 +89,13 @@ func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("failed to reset db with err: " + err.Error()))
 		return
 	}
+	err = cfg.db.DeleteAllChirps(r.Context())
+	if err != nil {
+		logError("failed to delete chirps", err)
+		w.WriteHeader(500)
+		w.Write([]byte("failed to reset db with err: " + err.Error()))
+		return
+	}
 	logInfo("users reset at env: %s", cfg.platform)
 	w.WriteHeader(200)
 	cfg.fileServerHits.Store(0)
@@ -128,20 +136,27 @@ func main() {
 			logError("/healthz failed to write with error: %v\n", err)
 		}
 	})
-	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Body string `json:"body"`
+			Body   string `json:"body"`
+			UserID string `json:"user_id"`
 		}
 		type returnVals struct {
-			Error       string `json:"error,omitempty"`
-			CleanedBody string `json:"cleaned_body,omitempty"`
+			Id        string `json:"id"`
+			CreatedAt string `json:"created_at"`
+			UpdatedAt string `json:"updated_at"`
+			Body      string `json:"body"`
+			UserID    string `json:"user_id"`
+		}
+		type returnError struct {
+			Error string `json:"error"`
 		}
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
 			logError("failed to decode params: %s", err)
 			w.WriteHeader(500)
-			respBody := returnVals{
+			respBody := returnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -156,7 +171,7 @@ func main() {
 		}
 		if len(params.Body) > 140 {
 			w.WriteHeader(400)
-			respBody := returnVals{
+			respBody := returnError{
 				Error: "Chirp is too long",
 			}
 			data, err := json.Marshal(respBody)
@@ -171,7 +186,7 @@ func main() {
 		}
 		if params.Body == "" {
 			w.WriteHeader(400)
-			respBody := returnVals{
+			respBody := returnError{
 				Error: "Empty \"body\" field",
 			}
 			data, err := json.Marshal(respBody)
@@ -188,7 +203,6 @@ func main() {
 		logInfo("word: %s", params.Body)
 		words := strings.Split(params.Body, " ")
 		for wordIndex := range words {
-			logInfo("word: %s", words[wordIndex])
 			if strings.ToLower(words[wordIndex]) == "kerfuffle" {
 				words[wordIndex] = "****"
 				continue
@@ -204,17 +218,62 @@ func main() {
 		}
 
 		params.Body = strings.Join(words, " ")
-
-		respBody := returnVals{
-			CleanedBody: params.Body,
+		id, err := uuid.Parse(params.UserID)
+		if err != nil {
+			logError("failed to get uuid: %s", err)
+			respBody := returnError{
+				Error: "Invaid \"user_id\" field",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
 		}
+		nid := uuid.NullUUID{
+			UUID:  id,
+			Valid: true,
+		}
+		chirpParams := database.CreateChirpParams{
+			Body:   params.Body,
+			UserID: nid,
+		}
+		chirp, err := apiCfg.db.CreateChirp(r.Context(), chirpParams)
+		if err != nil {
+			logError("failed to create user: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		respBody := returnVals{
+			Id:        chirp.ID.String(),
+			CreatedAt: chirp.CreatedAt.String(),
+			UpdatedAt: chirp.UpdatedAt.String(),
+			Body:      chirp.Body,
+			UserID:    chirp.UserID.UUID.String(),
+		}
+
 		data, err := json.Marshal(respBody)
 		if err != nil {
 			logError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
 			return
 		}
-		w.WriteHeader(200)
+		w.WriteHeader(201)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})

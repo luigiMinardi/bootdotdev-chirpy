@@ -37,7 +37,7 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 }
 
 const deleteAllUsers = `-- name: DeleteAllUsers :exec
-TRUNCATE users
+TRUNCATE users CASCADE
 `
 
 func (q *Queries) DeleteAllUsers(ctx context.Context) error {

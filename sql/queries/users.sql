@@ -12,4 +12,4 @@ INSERT INTO users(
 )
 RETURNING *;
 -- name: DeleteAllUsers :exec
-TRUNCATE users;
+TRUNCATE users CASCADE;
