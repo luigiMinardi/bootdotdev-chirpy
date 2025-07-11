@@ -13,6 +13,7 @@
 
 # App binary
 chirpy
+tmp/
 
 # Code coverage profiles and other test artifacts
 *.out
