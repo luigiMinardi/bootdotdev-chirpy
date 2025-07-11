@@ -200,7 +200,6 @@ func main() {
 			return
 		}
 
-		logInfo("word: %s", params.Body)
 		words := strings.Split(params.Body, " ")
 		for wordIndex := range words {
 			if strings.ToLower(words[wordIndex]) == "kerfuffle" {
@@ -273,6 +272,41 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
+	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+		type returnError struct {
+			Error string `json:"error"`
+		}
+
+		chirps, err := apiCfg.db.GetAllChirps(r.Context())
+		if err != nil {
+			logError("failed to retrieve chirps: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		data, err := json.Marshal(chirps)
+		if err != nil {
+			logError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
 			Email string `json:"email"`

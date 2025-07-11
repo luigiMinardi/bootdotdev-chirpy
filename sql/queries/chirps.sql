@@ -13,5 +13,10 @@ INSERT INTO chirps(
     $2
 )
 RETURNING *;
+
 -- name: DeleteAllChirps :exec
 TRUNCATE chirps CASCADE;
+
+-- name: GetAllChirps :many
+SELECT * FROM chirps
+ORDER BY created_at ASC;
