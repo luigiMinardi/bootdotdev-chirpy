@@ -229,6 +229,7 @@ func main() {
 				w.WriteHeader(500)
 				return
 			}
+			w.WriteHeader(400)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
 			return
@@ -297,6 +298,61 @@ func main() {
 		}
 
 		data, err := json.Marshal(chirps)
+		if err != nil {
+			logError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+
+	mux.HandleFunc("GET /api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
+		type returnError struct {
+			Error string `json:"error"`
+		}
+
+		idString := r.PathValue("chirpID")
+
+		id, err := uuid.Parse(idString)
+		if err != nil {
+			logError("failed to get uuid: %s", err)
+			respBody := returnError{
+				Error: "Invaid \"chirpID\" path parameter",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.WriteHeader(400)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		chirp, err := apiCfg.db.GetChirp(r.Context(), id)
+		if err != nil {
+			logError("failed to retrieve chirp: %s", err)
+			w.WriteHeader(404)
+			respBody := returnError{
+				Error: "This chirp was deleted or don't exist",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		data, err := json.Marshal(chirp)
 		if err != nil {
 			logError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
