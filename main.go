@@ -14,30 +14,8 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
+	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 )
-
-const (
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
-	ColorBlue   = "\033[34m"
-	ColorReset  = "\033[0m"
-	LogError    = ColorRed + "ERROR: " + ColorReset
-	LogWarn     = ColorYellow + "WARN: " + ColorReset
-	LogInfo     = ColorBlue + "INFO: " + ColorReset
-)
-
-// Logs (s) to the terminal with (arg) arguments, before (s) you have "INFO: "
-// printed in Blue
-func logInfo(s string, arg any) {
-	log.Printf(LogInfo+s, arg)
-}
-
-// Logs (s) to the terminal with (arg) arguments, before (s) you have "ERROR: "
-// printed in Red
-func logError(s string, arg any) {
-	log.Printf(LogError+s, arg)
-}
 
 // struct that holds api data like metrics environments, db etc.
 type apiConfig struct {
@@ -54,7 +32,7 @@ type apiConfig struct {
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileServerHits.Add(1)
-		logInfo("current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
+		logging.LogInfo("current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
 		next.ServeHTTP(w, r)
 	})
 }
@@ -71,7 +49,7 @@ func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
   </body>
 </html>`, cfg.fileServerHits.Load()))
 	if err != nil {
-		logError("/metrics failed to write with error: %v\n", err)
+		logging.LogError("/metrics failed to write with error: %v\n", err)
 	}
 }
 
@@ -84,19 +62,19 @@ func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 	}
 	err := cfg.db.DeleteAllUsers(r.Context())
 	if err != nil {
-		logError("failed to delete users", err)
+		logging.LogError("failed to delete users", err)
 		w.WriteHeader(500)
 		w.Write([]byte("failed to reset db with err: " + err.Error()))
 		return
 	}
 	err = cfg.db.DeleteAllChirps(r.Context())
 	if err != nil {
-		logError("failed to delete chirps", err)
+		logging.LogError("failed to delete chirps", err)
 		w.WriteHeader(500)
 		w.Write([]byte("failed to reset db with err: " + err.Error()))
 		return
 	}
-	logInfo("users reset at env: %s", cfg.platform)
+	logging.LogInfo("users reset at env: %s", cfg.platform)
 	w.WriteHeader(200)
 	cfg.fileServerHits.Store(0)
 	w.Write([]byte("fileServerHits reset to 0 and database reset to initial state."))
@@ -106,15 +84,15 @@ func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
-		log.Panicf(LogError + "DB_URL must be set")
+		log.Panicf(logging.LOGERROR + "DB_URL must be set")
 	}
 	platform := os.Getenv("PLATFORM")
 	if platform == "" {
-		log.Panicf(LogError + "PLATFORM must be set")
+		log.Panicf(logging.LOGERROR + "PLATFORM must be set")
 	}
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Panicf(LogError+"db connection failed with err: %v", err)
+		log.Panicf(logging.LOGERROR+"db connection failed with err: %v", err)
 	}
 	dbQueries := database.New(db)
 	mux := http.NewServeMux()
@@ -133,7 +111,7 @@ func main() {
 		w.WriteHeader(200)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {
-			logError("/healthz failed to write with error: %v\n", err)
+			logging.LogError("/healthz failed to write with error: %v\n", err)
 		}
 	})
 	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
@@ -154,14 +132,14 @@ func main() {
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
-			logError("failed to decode params: %s", err)
+			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -176,7 +154,7 @@ func main() {
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -191,7 +169,7 @@ func main() {
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -219,13 +197,13 @@ func main() {
 		params.Body = strings.Join(words, " ")
 		id, err := uuid.Parse(params.UserID)
 		if err != nil {
-			logError("failed to get uuid: %s", err)
+			logging.LogError("failed to get uuid: %s", err)
 			respBody := returnError{
 				Error: "Invaid \"user_id\" field",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -240,14 +218,14 @@ func main() {
 		}
 		chirp, err := apiCfg.db.CreateChirp(r.Context(), chirpParams)
 		if err != nil {
-			logError("failed to create user: %s", err)
+			logging.LogError("failed to create user: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -265,7 +243,7 @@ func main() {
 
 		data, err := json.Marshal(respBody)
 		if err != nil {
-			logError("failed to marshal JSON: %s", err)
+			logging.LogError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
 			return
 		}
@@ -280,7 +258,7 @@ func main() {
 
 		chirps, err := apiCfg.db.GetAllChirps(r.Context())
 		if err != nil {
-			logError("failed to retrieve chirps: %s", err)
+			logging.LogError("failed to retrieve chirps: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
@@ -288,7 +266,7 @@ func main() {
 
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -299,7 +277,7 @@ func main() {
 
 		data, err := json.Marshal(chirps)
 		if err != nil {
-			logError("failed to marshal JSON: %s", err)
+			logging.LogError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
 			return
 		}
@@ -317,13 +295,13 @@ func main() {
 
 		id, err := uuid.Parse(idString)
 		if err != nil {
-			logError("failed to get uuid: %s", err)
+			logging.LogError("failed to get uuid: %s", err)
 			respBody := returnError{
 				Error: "Invaid \"chirpID\" path parameter",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -335,7 +313,7 @@ func main() {
 
 		chirp, err := apiCfg.db.GetChirp(r.Context(), id)
 		if err != nil {
-			logError("failed to retrieve chirp: %s", err)
+			logging.LogError("failed to retrieve chirp: %s", err)
 			w.WriteHeader(404)
 			respBody := returnError{
 				Error: "This chirp was deleted or don't exist",
@@ -343,7 +321,7 @@ func main() {
 
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -354,7 +332,7 @@ func main() {
 
 		data, err := json.Marshal(chirp)
 		if err != nil {
-			logError("failed to marshal JSON: %s", err)
+			logging.LogError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
 			return
 		}
@@ -379,14 +357,14 @@ func main() {
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
-			logError("failed to decode params: %s", err)
+			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -396,14 +374,14 @@ func main() {
 		}
 		user, err := apiCfg.db.CreateUser(r.Context(), params.Email)
 		if err != nil {
-			logError("failed to create user: %s", err)
+			logging.LogError("failed to create user: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
 			if err != nil {
-				logError("failed to marshal JSON: %s", err)
+				logging.LogError("failed to marshal JSON: %s", err)
 				w.WriteHeader(500)
 				return
 			}
@@ -420,7 +398,7 @@ func main() {
 
 		data, err := json.Marshal(respBody)
 		if err != nil {
-			logError("failed to marshal JSON: %s", err)
+			logging.LogError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
 			return
 		}
@@ -431,8 +409,8 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.endpointReset)
 
-	logInfo("HTTP server started on http://localhost%v\n", srv.Addr)
+	logging.LogInfo("HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
-		logError("HTTP Server ListenAndServe error: %v\n", err)
+		logging.LogError("HTTP Server ListenAndServe error: %v\n", err)
 	}
 }
