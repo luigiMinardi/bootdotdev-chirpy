@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/luigiMinardi/bootdotdev-chirpy/internal/auth"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 )
@@ -343,7 +344,8 @@ func main() {
 
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Email string `json:"email"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
 		}
 		type returnVals struct {
 			Id        string `json:"id"`
@@ -372,7 +374,29 @@ func main() {
 			w.Write(data)
 			return
 		}
-		user, err := apiCfg.db.CreateUser(r.Context(), params.Email)
+		passwd, err := auth.HashPassword(params.Password)
+		if err != nil {
+			logging.LogError("Hash Password failed: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		userParams := database.CreateUserParams{
+			Email:          params.Email,
+			HashedPassword: passwd,
+		}
+		user, err := apiCfg.db.CreateUser(r.Context(), userParams)
 		if err != nil {
 			logging.LogError("failed to create user: %s", err)
 			w.WriteHeader(500)
@@ -403,6 +427,94 @@ func main() {
 			return
 		}
 		w.WriteHeader(201)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
+		type parameters struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		type returnVals struct {
+			Id        string `json:"id"`
+			CreatedAt string `json:"created_at"`
+			UpdatedAt string `json:"updated_at"`
+			Email     string `json:"email"`
+		}
+		type returnError struct {
+			Error string `json:"error"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+		if err := decoder.Decode(&params); err != nil {
+			logging.LogError("failed to decode params: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		user, err := apiCfg.db.GetUserByEmail(r.Context(), params.Email)
+		if err != nil {
+			logging.LogError("failed to retrieve user: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Incorrect email or password",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		err = auth.CheckPasswordHash(params.Password, user.HashedPassword)
+		if err != nil {
+			logging.LogError("failed to retrieve user: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Incorrect email or password",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		respBody := returnVals{
+			Id:        user.ID.String(),
+			CreatedAt: user.CreatedAt.String(),
+			UpdatedAt: user.UpdatedAt.String(),
+			Email:     user.Email,
+		}
+
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			logging.LogError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
