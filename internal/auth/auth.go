@@ -2,6 +2,8 @@ package auth
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -85,4 +87,16 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 	return uid, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	authorization := headers.Get("Authorization")
+	if len(authorization) <= 0 {
+		return "", fmt.Errorf("Authorization header with invalid length: %v", len(authorization))
+	}
+	tokenArr := strings.Split(authorization, " ")
+	if len(tokenArr) < 2 {
+		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
+	}
+	return tokenArr[1], nil
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -26,6 +27,8 @@ type apiConfig struct {
 	platform string
 	// data base
 	db *database.Queries
+	// jwt secret
+	jwtSecret string
 }
 
 // Middleware function that counts how many times an endpoint has been hit, it
@@ -91,6 +94,10 @@ func main() {
 	if platform == "" {
 		log.Panicf(logging.LOGERROR + "PLATFORM must be set")
 	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Panicf(logging.LOGERROR + "JWT_SECRET must be set")
+	}
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Panicf(logging.LOGERROR+"db connection failed with err: %v", err)
@@ -104,6 +111,7 @@ func main() {
 	apiCfg := &apiConfig{}
 	apiCfg.platform = platform
 	apiCfg.db = dbQueries
+	apiCfg.jwtSecret = jwtSecret
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -117,8 +125,7 @@ func main() {
 	})
 	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Body   string `json:"body"`
-			UserID string `json:"user_id"`
+			Body string `json:"body"`
 		}
 		type returnVals struct {
 			Id        string `json:"id"`
@@ -130,6 +137,43 @@ func main() {
 		type returnError struct {
 			Error string `json:"error"`
 		}
+
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			logging.LogError("failed to get token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You're not logged in.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		id, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
+		if err != nil {
+			logging.LogError("POST /api/chirps failed to validate token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
@@ -196,30 +240,14 @@ func main() {
 		}
 
 		params.Body = strings.Join(words, " ")
-		id, err := uuid.Parse(params.UserID)
-		if err != nil {
-			logging.LogError("failed to get uuid: %s", err)
-			respBody := returnError{
-				Error: "Invaid \"user_id\" field",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.WriteHeader(400)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
+
 		chirpParams := database.CreateChirpParams{
 			Body:   params.Body,
 			UserID: id,
 		}
 		chirp, err := apiCfg.db.CreateChirp(r.Context(), chirpParams)
 		if err != nil {
-			logging.LogError("failed to create user: %s", err)
+			logging.LogError("failed to create chirp: %s", err)
 			w.WriteHeader(500)
 			respBody := returnError{
 				Error: "Something went wrong",
@@ -432,14 +460,16 @@ func main() {
 	})
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Email    string `json:"email"`
-			Password string `json:"password"`
+			Email            string `json:"email"`
+			Password         string `json:"password"`
+			ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
 		}
 		type returnVals struct {
 			Id        string `json:"id"`
 			CreatedAt string `json:"created_at"`
 			UpdatedAt string `json:"updated_at"`
 			Email     string `json:"email"`
+			Token     string `json:"token"`
 		}
 		type returnError struct {
 			Error string `json:"error"`
@@ -461,6 +491,13 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
 			return
+		}
+
+		var expirationTime time.Duration
+		if time.Duration(params.ExpiresInSeconds)*time.Second > time.Hour || params.ExpiresInSeconds == 0 {
+			expirationTime = time.Hour
+		} else {
+			expirationTime = time.Duration(params.ExpiresInSeconds)
 		}
 
 		user, err := apiCfg.db.GetUserByEmail(r.Context(), params.Email)
@@ -501,11 +538,31 @@ func main() {
 			return
 		}
 
+		userJWT, err := auth.MakeJWT(user.ID, apiCfg.jwtSecret, expirationTime)
+		if err != nil {
+			logging.LogError("failed to generate user jwt: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something wrong happened please contact the admin.",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
 		respBody := returnVals{
 			Id:        user.ID.String(),
 			CreatedAt: user.CreatedAt.String(),
 			UpdatedAt: user.UpdatedAt.String(),
 			Email:     user.Email,
+			Token:     userJWT,
 		}
 
 		data, err := json.Marshal(respBody)
