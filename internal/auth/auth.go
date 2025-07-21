@@ -10,6 +10,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	TokenIssuerAPI string = "chirpy"
+)
+
 func HashPassword(password string) (string, error) {
 	if len(password) < 1 {
 		logging.LogError("password is empty: %s", password)
@@ -34,7 +38,7 @@ func CheckPasswordHash(password, hash string) error {
 
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    "chirpy",
+		Issuer:    TokenIssuerAPI,
 		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
 		Subject:   userID.String(),
@@ -63,6 +67,18 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		logging.LogError("ValidateJWT Claims GetSubject errored with: %s", err)
 		return uuid.Nil, err
 	}
+
+	issuer, err := token.Claims.GetIssuer()
+	if err != nil {
+		logging.LogError("ValidateJWT Claims GetIssuer errored with: %s", err)
+		return uuid.Nil, err
+	}
+
+	if issuer != TokenIssuerAPI {
+		logging.LogError("ValidateJWT returned wrong issuer: %s", issuer)
+		return uuid.Nil, fmt.Errorf("Issuer '%s' is not the API issuer '%s'.", issuer, TokenIssuerAPI)
+	}
+
 	uid, err := uuid.Parse(subject)
 	if err != nil {
 		logging.LogError("ValidateJWT UUID Parse errored with: %s", err)

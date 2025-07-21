@@ -24,3 +24,9 @@ func LogInfo(s string, arg any) {
 func LogError(s string, arg any) {
 	log.Printf(LOGERROR+s, arg)
 }
+
+// Logs (s) to the terminal with (arg) arguments, before (s) you have "WARN: "
+// printed in Yellow
+func LogWarn(s string, arg any) {
+	log.Printf(LOGWARN+s, arg)
+}

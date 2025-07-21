@@ -66,3 +66,46 @@ func TestValidateAJWTWithNoUUID(t *testing.T) {
 		t.Errorf("ValidateJWT worked with an invalid empty UUID%s", ".")
 	}
 }
+
+func TestValidateAJWTWithWrongIssuer(t *testing.T) {
+	issuer := "chirpies"
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    issuer,
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Second * 30)),
+		Subject:   "",
+	})
+
+	signedToken, err := token.SignedString([]byte(tokenSecret))
+	if err != nil {
+		logging.LogError("invalid token data: %s", token)
+		t.Errorf("invalid token signing failed with: %s", err)
+	}
+
+	_, err = ValidateJWT(signedToken, tokenSecret)
+	if err == nil {
+		t.Errorf("ValidateJWT worked with a wrong issuer %s", issuer)
+	}
+}
+
+func TestValidateAJWTWithWrongTokenSecret(t *testing.T) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Second * 30)),
+		Subject:   "",
+	})
+
+	secret := "otherSecretTest"
+
+	signedToken, err := token.SignedString([]byte(secret))
+	if err != nil {
+		logging.LogError("invalid token data: %s", token)
+		t.Errorf("invalid token signing failed with: %s", err)
+	}
+
+	_, err = ValidateJWT(signedToken, tokenSecret)
+	if err == nil {
+		t.Errorf("ValidateJWT successfuly validated a token signed with '%s' signature by passing '%s' as a signature", secret, signedToken)
+	}
+}
