@@ -19,6 +19,11 @@ import (
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 )
 
+// struct that defines the return error for a request
+type returnError struct {
+	Error string `json:"error"`
+}
+
 // struct that holds api data like metrics environments, db etc.
 type apiConfig struct {
 	// metric that counts how many times all endpoints that use it have been hit
@@ -133,9 +138,6 @@ func main() {
 			UpdatedAt string `json:"updated_at"`
 			Body      string `json:"body"`
 			UserID    string `json:"user_id"`
-		}
-		type returnError struct {
-			Error string `json:"error"`
 		}
 
 		token, err := auth.GetBearerToken(r.Header)
@@ -281,10 +283,6 @@ func main() {
 		w.Write(data)
 	})
 	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
-		type returnError struct {
-			Error string `json:"error"`
-		}
-
 		chirps, err := apiCfg.db.GetAllChirps(r.Context())
 		if err != nil {
 			logging.LogError("failed to retrieve chirps: %s", err)
@@ -316,10 +314,6 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
-		type returnError struct {
-			Error string `json:"error"`
-		}
-
 		idString := r.PathValue("chirpID")
 
 		id, err := uuid.Parse(idString)
@@ -381,9 +375,7 @@ func main() {
 			UpdatedAt string `json:"updated_at"`
 			Email     string `json:"email"`
 		}
-		type returnError struct {
-			Error string `json:"error"`
-		}
+
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
@@ -460,20 +452,18 @@ func main() {
 	})
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Email            string `json:"email"`
-			Password         string `json:"password"`
-			ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
 		}
 		type returnVals struct {
-			Id        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-			UpdatedAt string `json:"updated_at"`
-			Email     string `json:"email"`
-			Token     string `json:"token"`
+			Id           string `json:"id"`
+			CreatedAt    string `json:"created_at"`
+			UpdatedAt    string `json:"updated_at"`
+			Email        string `json:"email"`
+			Token        string `json:"token"`
+			RefreshToken string `json:"refresh_token"`
 		}
-		type returnError struct {
-			Error string `json:"error"`
-		}
+
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
 		if err := decoder.Decode(&params); err != nil {
@@ -491,13 +481,6 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
 			return
-		}
-
-		var expirationTime time.Duration
-		if time.Duration(params.ExpiresInSeconds)*time.Second > time.Hour || params.ExpiresInSeconds == 0 {
-			expirationTime = time.Hour
-		} else {
-			expirationTime = time.Duration(params.ExpiresInSeconds)
 		}
 
 		user, err := apiCfg.db.GetUserByEmail(r.Context(), params.Email)
@@ -538,7 +521,7 @@ func main() {
 			return
 		}
 
-		userJWT, err := auth.MakeJWT(user.ID, apiCfg.jwtSecret, expirationTime)
+		userJWT, err := auth.MakeJWT(user.ID, apiCfg.jwtSecret, time.Hour)
 		if err != nil {
 			logging.LogError("failed to generate user jwt: %s", err)
 			w.WriteHeader(500)
@@ -557,12 +540,41 @@ func main() {
 			return
 		}
 
+		refreshTokenToken, err := auth.MakeRefreshToken()
+		if err != nil {
+			logging.LogError("refresh token failed to be generated: %s", err)
+		}
+
+		refreshTokenParams := database.CreateRefreshTokenParams{
+			Token:     refreshTokenToken,
+			UserID:    user.ID,
+			ExpiresAt: time.Now().Add(time.Hour * 24 * 60), // expires in 2 months
+		}
+		refreshToken, err := apiCfg.db.CreateRefreshToken(r.Context(), refreshTokenParams)
+		if err != nil {
+			logging.LogError("failed to create refreshToken: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
 		respBody := returnVals{
-			Id:        user.ID.String(),
-			CreatedAt: user.CreatedAt.String(),
-			UpdatedAt: user.UpdatedAt.String(),
-			Email:     user.Email,
-			Token:     userJWT,
+			Id:           user.ID.String(),
+			CreatedAt:    user.CreatedAt.String(),
+			UpdatedAt:    user.UpdatedAt.String(),
+			Email:        user.Email,
+			Token:        userJWT,
+			RefreshToken: refreshToken.Token,
 		}
 
 		data, err := json.Marshal(respBody)
@@ -574,6 +586,129 @@ func main() {
 		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
+	})
+	mux.HandleFunc("POST /api/refresh", func(w http.ResponseWriter, r *http.Request) {
+		type returnVals struct {
+			Token string `json:"token"`
+		}
+
+		refreshTokenToken, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			logging.LogError("failed to get refresh token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You're not logged in.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		refreshToken, err := apiCfg.db.GetRefreshToken(r.Context(), refreshTokenToken)
+		if err != nil {
+			logging.LogError("POST /api/refresh failed to find refresh token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		if time.Now().Compare(refreshToken.ExpiresAt) != -1 || refreshToken.RevokedAt.Valid == true {
+			logging.LogError("refresh token expired org got revoked at: %s", refreshToken.RevokedAt.Time)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		token, err := auth.MakeJWT(refreshToken.UserID, apiCfg.jwtSecret, time.Hour)
+		if err != nil {
+			logging.LogError("failed to generate user jwt: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something wrong happened please contact the admin.",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		respBody := returnVals{
+			Token: token,
+		}
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			logging.LogError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+	mux.HandleFunc("POST /api/revoke", func(w http.ResponseWriter, r *http.Request) {
+		refreshTokenToken, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			logging.LogError("failed to get refresh token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You're not logged in.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		err = apiCfg.db.RevokeRefreshToken(r.Context(), refreshTokenToken)
+		if err != nil {
+			logging.LogError("POST /api/revoke failed to find refresh token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		w.WriteHeader(204)
 	})
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.endpointReset)

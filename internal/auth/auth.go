@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -99,4 +101,14 @@ func GetBearerToken(headers http.Header) (string, error) {
 		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
 	}
 	return tokenArr[1], nil
+}
+
+func MakeRefreshToken() (string, error) {
+	tokenArr := make([]byte, 64) // you need to allocate a byte array for rand.Read to work
+	l, _ := rand.Read(tokenArr)
+	if l <= 0 {
+		return "", fmt.Errorf("failed to allocate byte array to rand.Read")
+	}
+	token := hex.EncodeToString(tokenArr)
+	return token, nil
 }
