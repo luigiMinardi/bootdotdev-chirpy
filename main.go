@@ -450,6 +450,130 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
+	mux.HandleFunc("PUT /api/users", func(w http.ResponseWriter, r *http.Request) {
+		type parameters struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		type returnVals struct {
+			Id        string `json:"id"`
+			CreatedAt string `json:"created_at"`
+			UpdatedAt string `json:"updated_at"`
+			Email     string `json:"email"`
+		}
+
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			logging.LogError("failed to get token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You're not logged in.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		id, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
+		if err != nil {
+			logging.LogError("POST /api/chirps failed to validate token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+		if err := decoder.Decode(&params); err != nil {
+			logging.LogError("failed to decode params: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		passwd, err := auth.HashPassword(params.Password)
+		if err != nil {
+			logging.LogError("Hash Password failed: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		userParams := database.UpdateUserParams{
+			ID:             id,
+			Email:          params.Email,
+			HashedPassword: passwd,
+		}
+		user, err := apiCfg.db.UpdateUser(r.Context(), userParams)
+		if err != nil {
+			logging.LogError("failed to update user: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		respBody := returnVals{
+			Id:        user.ID.String(),
+			CreatedAt: user.CreatedAt.String(),
+			UpdatedAt: user.UpdatedAt.String(),
+			Email:     user.Email,
+		}
+
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			logging.LogError("failed to marshal JSON: %s", err)
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
 			Email    string `json:"email"`
