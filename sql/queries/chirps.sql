@@ -17,6 +17,12 @@ RETURNING *;
 -- name: DeleteAllChirps :exec
 TRUNCATE chirps CASCADE;
 
+-- name: DeleteChirp :one
+
+DELETE FROM chirps
+WHERE user_id = $1 AND id = $2
+RETURNING *;
+
 -- name: GetAllChirps :many
 SELECT * FROM chirps
 ORDER BY created_at ASC;

@@ -363,6 +363,115 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	})
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
+
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			logging.LogError("failed to get token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You're not logged in.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		userId, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
+		if err != nil {
+			logging.LogError("PUT /api/users failed to validate token: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "Please log in again.",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		idString := r.PathValue("chirpID")
+
+		chirpId, err := uuid.Parse(idString)
+		if err != nil {
+			logging.LogError("failed to get uuid: %s", err)
+			respBody := returnError{
+				Error: "Invaid \"chirpID\" path parameter",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.WriteHeader(400)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		dta := database.DeleteChirpParams{
+			UserID: userId,
+			ID:     chirpId,
+		}
+
+		chirp, err := apiCfg.db.GetChirp(r.Context(), chirpId)
+		if err != nil {
+			logging.LogError("failed to retrieve chirp: %s", err)
+			w.WriteHeader(404)
+			respBody := returnError{
+				Error: "This chirp was deleted or don't exist",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		if chirp.UserID != userId {
+			w.WriteHeader(403)
+			return
+		}
+
+		deletedChirp, err := apiCfg.db.DeleteChirp(r.Context(), dta)
+		if err != nil {
+			logging.LogError("failed to retrieve chirp: %s", err)
+			w.WriteHeader(404)
+			respBody := returnError{
+				Error: "This chirp was deleted or don't exist",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		logging.LogInfo("removed: %s", deletedChirp)
+
+		w.WriteHeader(204)
+		w.Header().Set("Content-Type", "application/json")
+	})
 
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
@@ -482,7 +591,7 @@ func main() {
 
 		id, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
 		if err != nil {
-			logging.LogError("POST /api/chirps failed to validate token: %s", err)
+			logging.LogError("PUT /api/users failed to validate token: %s", err)
 			w.WriteHeader(401)
 			respBody := returnError{
 				Error: "Please log in again.",
