@@ -27,5 +27,11 @@ UPDATE users
     hashed_password = $3,
     updated_at = NOW()
     WHERE id = $1 
-RETURNING id, created_at, updated_at, email;
+RETURNING id, created_at, updated_at, email, is_chirpy_red;
 
+-- name: UpgradeUserToChirpyRedByID :one
+UPDATE users
+    SET is_chirpy_red = TRUE,
+    updated_at = NOW()
+    WHERE id = $1
+RETURNING id, created_at, updated_at, email, is_chirpy_red;

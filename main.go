@@ -24,6 +24,16 @@ type returnError struct {
 	Error string `json:"error"`
 }
 
+// struct that defines a return value for a user, omiting its password
+// based on database.User
+type userWithNoPassword struct {
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Email       string    `json:"email"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
+}
+
 // struct that holds api data like metrics environments, db etc.
 type apiConfig struct {
 	// metric that counts how many times all endpoints that use it have been hit
@@ -478,12 +488,6 @@ func main() {
 			Email    string `json:"email"`
 			Password string `json:"password"`
 		}
-		type returnVals struct {
-			Id        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-			UpdatedAt string `json:"updated_at"`
-			Email     string `json:"email"`
-		}
 
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
@@ -542,11 +546,12 @@ func main() {
 			w.Write(data)
 			return
 		}
-		respBody := returnVals{
-			Id:        user.ID.String(),
-			CreatedAt: user.CreatedAt.String(),
-			UpdatedAt: user.UpdatedAt.String(),
-			Email:     user.Email,
+		respBody := userWithNoPassword{
+			ID:          user.ID,
+			CreatedAt:   user.CreatedAt,
+			UpdatedAt:   user.UpdatedAt,
+			Email:       user.Email,
+			IsChirpyRed: user.IsChirpyRed,
 		}
 
 		data, err := json.Marshal(respBody)
@@ -563,12 +568,6 @@ func main() {
 		type parameters struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
-		}
-		type returnVals struct {
-			Id        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-			UpdatedAt string `json:"updated_at"`
-			Email     string `json:"email"`
 		}
 
 		token, err := auth.GetBearerToken(r.Header)
@@ -665,14 +664,8 @@ func main() {
 			w.Write(data)
 			return
 		}
-		respBody := returnVals{
-			Id:        user.ID.String(),
-			CreatedAt: user.CreatedAt.String(),
-			UpdatedAt: user.UpdatedAt.String(),
-			Email:     user.Email,
-		}
 
-		data, err := json.Marshal(respBody)
+		data, err := json.Marshal(user)
 		if err != nil {
 			logging.LogError("failed to marshal JSON: %s", err)
 			w.WriteHeader(500)
@@ -693,6 +686,7 @@ func main() {
 			CreatedAt    string `json:"created_at"`
 			UpdatedAt    string `json:"updated_at"`
 			Email        string `json:"email"`
+			IsChirpyRed  bool   `json:"is_chirpy_red"`
 			Token        string `json:"token"`
 			RefreshToken string `json:"refresh_token"`
 		}
@@ -806,6 +800,7 @@ func main() {
 			CreatedAt:    user.CreatedAt.String(),
 			UpdatedAt:    user.UpdatedAt.String(),
 			Email:        user.Email,
+			IsChirpyRed:  user.IsChirpyRed,
 			Token:        userJWT,
 			RefreshToken: refreshToken.Token,
 		}
@@ -941,6 +936,59 @@ func main() {
 			w.Write(data)
 			return
 		}
+		w.WriteHeader(204)
+	})
+	mux.HandleFunc("POST /api/polka/webhooks", func(w http.ResponseWriter, r *http.Request) {
+		type parameters struct {
+			Event string `json:"event"`
+			Data  struct {
+				UserID uuid.UUID `json:"user_id"`
+			} `json:"data"`
+		}
+
+		decoder := json.NewDecoder(r.Body)
+		params := parameters{}
+		if err := decoder.Decode(&params); err != nil {
+			logging.LogError("failed to decode params: %s", err)
+			w.WriteHeader(500)
+			respBody := returnError{
+				Error: "Something went wrong",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
+		if params.Event != "user.upgraded" {
+			w.WriteHeader(204)
+			return
+		}
+
+		_, err := apiCfg.db.UpgradeUserToChirpyRedByID(r.Context(), params.Data.UserID)
+		if err != nil {
+			logging.LogError("failed to retrieve user: %s", err)
+			w.WriteHeader(404)
+			respBody := returnError{
+				Error: "This user was deleted or don't exist",
+			}
+
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+
 		w.WriteHeader(204)
 	})
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
