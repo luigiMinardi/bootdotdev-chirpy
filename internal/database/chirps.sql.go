@@ -82,11 +82,13 @@ func (q *Queries) DeleteChirp(ctx context.Context, arg DeleteChirpParams) (Chirp
 
 const getAllChirps = `-- name: GetAllChirps :many
 SELECT id, created_at, updated_at, body, user_id FROM chirps
-ORDER BY created_at ASC
+ORDER BY 
+CASE WHEN UPPER($1::text) = 'ASC' THEN created_at END ASC,
+CASE WHEN UPPER($1::text) = 'DESC' THEN created_at END DESC
 `
 
-func (q *Queries) GetAllChirps(ctx context.Context) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getAllChirps)
+func (q *Queries) GetAllChirps(ctx context.Context, sortOrder string) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getAllChirps, sortOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +119,18 @@ func (q *Queries) GetAllChirps(ctx context.Context) ([]Chirp, error) {
 const getAllChirpsFromUser = `-- name: GetAllChirpsFromUser :many
 SELECT id, created_at, updated_at, body, user_id FROM chirps
 WHERE user_id = $1
-ORDER BY created_at ASC
+ORDER BY 
+CASE WHEN UPPER($2::text) = 'ASC' THEN created_at END ASC,
+CASE WHEN UPPER($2::text) = 'DESC' THEN created_at END DESC
 `
 
-func (q *Queries) GetAllChirpsFromUser(ctx context.Context, userID uuid.UUID) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getAllChirpsFromUser, userID)
+type GetAllChirpsFromUserParams struct {
+	UserID    uuid.UUID `json:"user_id"`
+	SortOrder string    `json:"sort_order"`
+}
+
+func (q *Queries) GetAllChirpsFromUser(ctx context.Context, arg GetAllChirpsFromUserParams) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getAllChirpsFromUser, arg.UserID, arg.SortOrder)
 	if err != nil {
 		return nil, err
 	}

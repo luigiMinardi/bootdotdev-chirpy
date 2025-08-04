@@ -301,8 +301,16 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
 		authorId := r.URL.Query().Get("author_id")
+		sort := r.URL.Query().Get("sort")
+
 		var chirps []database.Chirp
 		var authorUid uuid.UUID
+
+		if sort != "asc" && sort != "desc" {
+			logging.LogInfo("sort: %s", sort)
+			sort = "asc"
+		}
+
 		if authorId != "" {
 			authorUid, err = uuid.Parse(authorId)
 			if err != nil {
@@ -322,9 +330,13 @@ func main() {
 				w.Write(data)
 				return
 			}
-			chirps, err = apiCfg.db.GetAllChirpsFromUser(r.Context(), authorUid)
+			params := database.GetAllChirpsFromUserParams{
+				UserID:    authorUid,
+				SortOrder: sort,
+			}
+			chirps, err = apiCfg.db.GetAllChirpsFromUser(r.Context(), params)
 		} else {
-			chirps, err = apiCfg.db.GetAllChirps(r.Context())
+			chirps, err = apiCfg.db.GetAllChirps(r.Context(), sort)
 		}
 		if err != nil {
 			logging.LogError("failed to retrieve chirps: %s", err)
