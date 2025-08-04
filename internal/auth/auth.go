@@ -100,6 +100,9 @@ func GetBearerToken(headers http.Header) (string, error) {
 	if len(tokenArr) < 2 {
 		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
 	}
+	if tokenArr[0] != "Bearer" {
+		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
+	}
 	return tokenArr[1], nil
 }
 
@@ -111,4 +114,20 @@ func MakeRefreshToken() (string, error) {
 	}
 	token := hex.EncodeToString(tokenArr)
 	return token, nil
+}
+
+// Get Header Authorization ApiKey
+func GetAPIKey(headers http.Header) (string, error) {
+	authorization := headers.Get("Authorization")
+	if len(authorization) <= 0 {
+		return "", fmt.Errorf("Authorization header with invalid length: %v", len(authorization))
+	}
+	tokenArr := strings.Split(authorization, " ")
+	if len(tokenArr) < 2 {
+		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
+	}
+	if tokenArr[0] != "ApiKey" {
+		return "", fmt.Errorf("Token Malformed: %v", tokenArr)
+	}
+	return tokenArr[1], nil
 }

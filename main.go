@@ -44,6 +44,8 @@ type apiConfig struct {
 	db *database.Queries
 	// jwt secret
 	jwtSecret string
+	// polka key
+	polkaKey string
 }
 
 // Middleware function that counts how many times an endpoint has been hit, it
@@ -113,6 +115,10 @@ func main() {
 	if jwtSecret == "" {
 		log.Panicf(logging.LOGERROR + "JWT_SECRET must be set")
 	}
+	polkaKey := os.Getenv("POLKA_KEY")
+	if polkaKey == "" {
+		log.Panicf(logging.LOGERROR + "POLKA_KEY must be set")
+	}
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Panicf(logging.LOGERROR+"db connection failed with err: %v", err)
@@ -127,6 +133,7 @@ func main() {
 	apiCfg.platform = platform
 	apiCfg.db = dbQueries
 	apiCfg.jwtSecret = jwtSecret
+	apiCfg.polkaKey = polkaKey
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -945,6 +952,42 @@ func main() {
 				UserID uuid.UUID `json:"user_id"`
 			} `json:"data"`
 		}
+		apiKey, err := auth.GetAPIKey(r.Header)
+		if err != nil {
+			logging.LogError("failed to get api key: %s", err)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You are not authenticated",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
+		logging.LogInfo("apiKey: %s", apiKey)
+		logging.LogInfo("apiCfg apiKey: %s", apiCfg.polkaKey)
+
+		if apiKey != apiCfg.polkaKey {
+			logging.LogError("POST /api/polka/webhooks failed to validate api key: %s", apiKey)
+			w.WriteHeader(401)
+			respBody := returnError{
+				Error: "You are not authenticated",
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				logging.LogError("failed to marshal JSON: %s", err)
+				w.WriteHeader(500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+			return
+		}
 
 		decoder := json.NewDecoder(r.Body)
 		params := parameters{}
@@ -970,7 +1013,7 @@ func main() {
 			return
 		}
 
-		_, err := apiCfg.db.UpgradeUserToChirpyRedByID(r.Context(), params.Data.UserID)
+		_, err = apiCfg.db.UpgradeUserToChirpyRedByID(r.Context(), params.Data.UserID)
 		if err != nil {
 			logging.LogError("failed to retrieve user: %s", err)
 			w.WriteHeader(404)
