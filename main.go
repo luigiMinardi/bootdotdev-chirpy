@@ -300,7 +300,32 @@ func main() {
 		w.Write(data)
 	})
 	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
-		chirps, err := apiCfg.db.GetAllChirps(r.Context())
+		authorId := r.URL.Query().Get("author_id")
+		var chirps []database.Chirp
+		var authorUid uuid.UUID
+		if authorId != "" {
+			authorUid, err = uuid.Parse(authorId)
+			if err != nil {
+				logging.LogError("invalid authorId: %s", err)
+				w.WriteHeader(404)
+				respBody := returnError{
+					Error: "Invalid Author ID",
+				}
+
+				data, err := json.Marshal(respBody)
+				if err != nil {
+					logging.LogError("failed to marshal JSON: %s", err)
+					w.WriteHeader(500)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(data)
+				return
+			}
+			chirps, err = apiCfg.db.GetAllChirpsFromUser(r.Context(), authorUid)
+		} else {
+			chirps, err = apiCfg.db.GetAllChirps(r.Context())
+		}
 		if err != nil {
 			logging.LogError("failed to retrieve chirps: %s", err)
 			w.WriteHeader(500)
