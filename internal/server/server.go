@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"database/sql"
@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -17,25 +16,11 @@ import (
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/auth"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
+	"github.com/luigiMinardi/bootdotdev-chirpy/internal/utils"
 )
 
-// struct that defines the return error for a request
-type returnError struct {
-	Error string `json:"error"`
-}
-
-// struct that defines a return value for a user, omiting its password
-// based on database.User
-type userWithNoPassword struct {
-	ID          uuid.UUID `json:"id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Email       string    `json:"email"`
-	IsChirpyRed bool      `json:"is_chirpy_red"`
-}
-
 // struct that holds api data like metrics environments, db etc.
-type apiConfig struct {
+type ApiConfig struct {
 	// metric that counts how many times all endpoints that use it have been hit
 	fileServerHits atomic.Int32
 	// if you're in prod or dev environment
@@ -48,9 +33,19 @@ type apiConfig struct {
 	polkaKey string
 }
 
+// struct that defines a return value for a user, omiting its password
+// based on database.User
+type userWithNoPassword struct {
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Email       string    `json:"email"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
+}
+
 // Middleware function that counts how many times an endpoint has been hit, it
 // does not save it so when server resets it's restarted.
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
+func (cfg *ApiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileServerHits.Add(1)
 		logging.LogInfo("current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
@@ -58,8 +53,8 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-// endpoint to visualize the apiConfig.fileServerHits metric in html.
-func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
+// endpoint to visualize the utils.ApiConfig.fileServerHits metric in html.
+func (cfg *ApiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(200)
 
@@ -74,8 +69,8 @@ func (cfg *apiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// endpoint to reset the apiConfig related things on dev environment.
-func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
+// endpoint to reset the utils.ApiConfig related things on dev environment.
+func (cfg *ApiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 	if cfg.platform != "dev" {
 		w.WriteHeader(403)
 		w.Write([]byte("You can only reset on dev environment."))
@@ -101,7 +96,7 @@ func (cfg *apiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("fileServerHits reset to 0 and database reset to initial state."))
 }
 
-func main() {
+func NewServer() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
@@ -129,7 +124,7 @@ func main() {
 		Handler: mux,
 		Addr:    ":8080",
 	}
-	apiCfg := &apiConfig{}
+	apiCfg := &ApiConfig{}
 	apiCfg.platform = platform
 	apiCfg.db = dbQueries
 	apiCfg.jwtSecret = jwtSecret
@@ -145,387 +140,10 @@ func main() {
 			logging.LogError("/healthz failed to write with error: %v\n", err)
 		}
 	})
-	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
-		type parameters struct {
-			Body string `json:"body"`
-		}
-		type returnVals struct {
-			Id        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-			UpdatedAt string `json:"updated_at"`
-			Body      string `json:"body"`
-			UserID    string `json:"user_id"`
-		}
-
-		token, err := auth.GetBearerToken(r.Header)
-		if err != nil {
-			logging.LogError("failed to get token: %s", err)
-			w.WriteHeader(401)
-			respBody := returnError{
-				Error: "You're not logged in.",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		id, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
-		if err != nil {
-			logging.LogError("POST /api/chirps failed to validate token: %s", err)
-			w.WriteHeader(401)
-			respBody := returnError{
-				Error: "Please log in again.",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		decoder := json.NewDecoder(r.Body)
-		params := parameters{}
-		if err := decoder.Decode(&params); err != nil {
-			logging.LogError("failed to decode params: %s", err)
-			w.WriteHeader(500)
-			respBody := returnError{
-				Error: "Something went wrong",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-		if len(params.Body) > 140 {
-			w.WriteHeader(400)
-			respBody := returnError{
-				Error: "Chirp is too long",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-		if params.Body == "" {
-			w.WriteHeader(400)
-			respBody := returnError{
-				Error: "Empty \"body\" field",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		words := strings.Split(params.Body, " ")
-		for wordIndex := range words {
-			if strings.ToLower(words[wordIndex]) == "kerfuffle" {
-				words[wordIndex] = "****"
-				continue
-			}
-			if strings.ToLower(words[wordIndex]) == "sharbert" {
-				words[wordIndex] = "****"
-				continue
-			}
-			if strings.ToLower(words[wordIndex]) == "fornax" {
-				words[wordIndex] = "****"
-				continue
-			}
-		}
-
-		params.Body = strings.Join(words, " ")
-
-		chirpParams := database.CreateChirpParams{
-			Body:   params.Body,
-			UserID: id,
-		}
-		chirp, err := apiCfg.db.CreateChirp(r.Context(), chirpParams)
-		if err != nil {
-			logging.LogError("failed to create chirp: %s", err)
-			w.WriteHeader(500)
-			respBody := returnError{
-				Error: "Something went wrong",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-		respBody := returnVals{
-			Id:        chirp.ID.String(),
-			CreatedAt: chirp.CreatedAt.String(),
-			UpdatedAt: chirp.UpdatedAt.String(),
-			Body:      chirp.Body,
-			UserID:    chirp.UserID.String(),
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.WriteHeader(201)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
-	})
-	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
-		authorId := r.URL.Query().Get("author_id")
-		sort := r.URL.Query().Get("sort")
-
-		var chirps []database.Chirp
-		var authorUid uuid.UUID
-
-		if sort != "asc" && sort != "desc" {
-			logging.LogInfo("sort: %s", sort)
-			sort = "asc"
-		}
-
-		if authorId != "" {
-			authorUid, err = uuid.Parse(authorId)
-			if err != nil {
-				logging.LogError("invalid authorId: %s", err)
-				w.WriteHeader(404)
-				respBody := returnError{
-					Error: "Invalid Author ID",
-				}
-
-				data, err := json.Marshal(respBody)
-				if err != nil {
-					logging.LogError("failed to marshal JSON: %s", err)
-					w.WriteHeader(500)
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				w.Write(data)
-				return
-			}
-			params := database.GetAllChirpsFromUserParams{
-				UserID:    authorUid,
-				SortOrder: sort,
-			}
-			chirps, err = apiCfg.db.GetAllChirpsFromUser(r.Context(), params)
-		} else {
-			chirps, err = apiCfg.db.GetAllChirps(r.Context(), sort)
-		}
-		if err != nil {
-			logging.LogError("failed to retrieve chirps: %s", err)
-			w.WriteHeader(500)
-			respBody := returnError{
-				Error: "Something went wrong",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		data, err := json.Marshal(chirps)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.WriteHeader(200)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
-	})
-
-	mux.HandleFunc("GET /api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
-		idString := r.PathValue("chirpID")
-
-		id, err := uuid.Parse(idString)
-		if err != nil {
-			logging.LogError("failed to get uuid: %s", err)
-			respBody := returnError{
-				Error: "Invaid \"chirpID\" path parameter",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.WriteHeader(400)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		chirp, err := apiCfg.db.GetChirp(r.Context(), id)
-		if err != nil {
-			logging.LogError("failed to retrieve chirp: %s", err)
-			w.WriteHeader(404)
-			respBody := returnError{
-				Error: "This chirp was deleted or don't exist",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		data, err := json.Marshal(chirp)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.WriteHeader(200)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
-	})
-	mux.HandleFunc("DELETE /api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
-
-		token, err := auth.GetBearerToken(r.Header)
-		if err != nil {
-			logging.LogError("failed to get token: %s", err)
-			w.WriteHeader(401)
-			respBody := returnError{
-				Error: "You're not logged in.",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		userId, err := auth.ValidateJWT(token, apiCfg.jwtSecret)
-		if err != nil {
-			logging.LogError("PUT /api/users failed to validate token: %s", err)
-			w.WriteHeader(401)
-			respBody := returnError{
-				Error: "Please log in again.",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		idString := r.PathValue("chirpID")
-
-		chirpId, err := uuid.Parse(idString)
-		if err != nil {
-			logging.LogError("failed to get uuid: %s", err)
-			respBody := returnError{
-				Error: "Invaid \"chirpID\" path parameter",
-			}
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.WriteHeader(400)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-
-		dta := database.DeleteChirpParams{
-			UserID: userId,
-			ID:     chirpId,
-		}
-
-		chirp, err := apiCfg.db.GetChirp(r.Context(), chirpId)
-		if err != nil {
-			logging.LogError("failed to retrieve chirp: %s", err)
-			w.WriteHeader(404)
-			respBody := returnError{
-				Error: "This chirp was deleted or don't exist",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-		if chirp.UserID != userId {
-			w.WriteHeader(403)
-			return
-		}
-
-		deletedChirp, err := apiCfg.db.DeleteChirp(r.Context(), dta)
-		if err != nil {
-			logging.LogError("failed to retrieve chirp: %s", err)
-			w.WriteHeader(404)
-			respBody := returnError{
-				Error: "This chirp was deleted or don't exist",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-			return
-		}
-		logging.LogInfo("removed: %s", deletedChirp)
-
-		w.WriteHeader(204)
-		w.Header().Set("Content-Type", "application/json")
-	})
+	mux.HandleFunc("POST /api/chirps", apiCfg.PostChirpsHandler)
+	mux.HandleFunc("GET /api/chirps", apiCfg.GetChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.GetChirpsByIdHandler)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.DeleteChirpsByIdHandler)
 
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
@@ -538,7 +156,7 @@ func main() {
 		if err := decoder.Decode(&params); err != nil {
 			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -555,7 +173,7 @@ func main() {
 		if err != nil {
 			logging.LogError("Hash Password failed: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -577,7 +195,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to create user: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -618,7 +236,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to get token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "You're not logged in.",
 			}
 			data, err := json.Marshal(respBody)
@@ -636,7 +254,7 @@ func main() {
 		if err != nil {
 			logging.LogError("PUT /api/users failed to validate token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Please log in again.",
 			}
 			data, err := json.Marshal(respBody)
@@ -655,7 +273,7 @@ func main() {
 		if err := decoder.Decode(&params); err != nil {
 			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -672,7 +290,7 @@ func main() {
 		if err != nil {
 			logging.LogError("Hash Password failed: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -695,7 +313,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to update user: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -740,7 +358,7 @@ func main() {
 		if err := decoder.Decode(&params); err != nil {
 			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -758,7 +376,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to retrieve user: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Incorrect email or password",
 			}
 
@@ -777,7 +395,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to retrieve user: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Incorrect email or password",
 			}
 
@@ -796,7 +414,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to generate user jwt: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something wrong happened please contact the admin.",
 			}
 
@@ -825,7 +443,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to create refreshToken: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -868,7 +486,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to get refresh token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "You're not logged in.",
 			}
 			data, err := json.Marshal(respBody)
@@ -885,7 +503,7 @@ func main() {
 		if err != nil {
 			logging.LogError("POST /api/refresh failed to find refresh token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Please log in again.",
 			}
 			data, err := json.Marshal(respBody)
@@ -901,7 +519,7 @@ func main() {
 		if time.Now().Compare(refreshToken.ExpiresAt) != -1 || refreshToken.RevokedAt.Valid == true {
 			logging.LogError("refresh token expired org got revoked at: %s", refreshToken.RevokedAt.Time)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Please log in again.",
 			}
 			data, err := json.Marshal(respBody)
@@ -918,7 +536,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to generate user jwt: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something wrong happened please contact the admin.",
 			}
 
@@ -950,7 +568,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to get refresh token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "You're not logged in.",
 			}
 			data, err := json.Marshal(respBody)
@@ -967,7 +585,7 @@ func main() {
 		if err != nil {
 			logging.LogError("POST /api/revoke failed to find refresh token: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Please log in again.",
 			}
 			data, err := json.Marshal(respBody)
@@ -993,7 +611,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to get api key: %s", err)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "You are not authenticated",
 			}
 			data, err := json.Marshal(respBody)
@@ -1012,7 +630,7 @@ func main() {
 		if apiKey != apiCfg.polkaKey {
 			logging.LogError("POST /api/polka/webhooks failed to validate api key: %s", apiKey)
 			w.WriteHeader(401)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "You are not authenticated",
 			}
 			data, err := json.Marshal(respBody)
@@ -1031,7 +649,7 @@ func main() {
 		if err := decoder.Decode(&params); err != nil {
 			logging.LogError("failed to decode params: %s", err)
 			w.WriteHeader(500)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "Something went wrong",
 			}
 			data, err := json.Marshal(respBody)
@@ -1054,7 +672,7 @@ func main() {
 		if err != nil {
 			logging.LogError("failed to retrieve user: %s", err)
 			w.WriteHeader(404)
-			respBody := returnError{
+			respBody := utils.ReturnError{
 				Error: "This user was deleted or don't exist",
 			}
 

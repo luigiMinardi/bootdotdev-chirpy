@@ -16,17 +16,17 @@ const (
 // Logs (s) to the terminal with (arg) arguments, before (s) you have "INFO: "
 // printed in Blue
 func LogInfo(s string, arg any) {
-	log.Printf(LOGINFO+s, arg)
+	log.Printf(LOGINFO+s+": %v", arg)
 }
 
 // Logs (s) to the terminal with (arg) arguments, before (s) you have "ERROR: "
 // printed in Red
 func LogError(s string, arg any) {
-	log.Printf(LOGERROR+s, arg)
+	log.Printf(LOGERROR+s+": %v", arg)
 }
 
 // Logs (s) to the terminal with (arg) arguments, before (s) you have "WARN: "
 // printed in Yellow
 func LogWarn(s string, arg any) {
-	log.Printf(LOGWARN+s, arg)
+	log.Printf(LOGWARN+s+": %v", arg)
 }
