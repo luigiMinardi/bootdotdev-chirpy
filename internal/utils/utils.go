@@ -3,13 +3,25 @@ package utils
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 )
 
 // struct that defines the return error for a request
 type ReturnError struct {
 	Error string `json:"error"`
+}
+
+// struct that defines a return value for a user, omiting its password
+// based on database.User
+type UserWithNoPassword struct {
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Email       string    `json:"email"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
 func Return500(w http.ResponseWriter, logErrMsg string, err any) {
