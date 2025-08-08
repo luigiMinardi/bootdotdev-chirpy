@@ -78,15 +78,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken.Token,
 	}
 
-	data, err := json.Marshal(respBody)
-	if err != nil {
-		logging.LogError("failed to marshal JSON", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 200, respBody)
 }
 
 // POST /api/refresh
@@ -117,15 +109,7 @@ func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 	respBody := returnVals{
 		Token: token,
 	}
-	data, err := json.Marshal(respBody)
-	if err != nil {
-		logging.LogError("failed to marshal JSON", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 200, respBody)
 }
 
 // POST /api/revoke

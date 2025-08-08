@@ -26,17 +26,21 @@ type UserWithNoPassword struct {
 
 func ResponseWithError(w http.ResponseWriter, code int, errorMsg, logErrMsg string, err any) {
 	logging.LogError(logErrMsg, err)
-	w.WriteHeader(code)
 	respBody := ReturnError{
 		Error: errorMsg,
 	}
 
-	data, err := json.Marshal(respBody)
+	ResponseWithJson(w, code, respBody)
+}
+
+func ResponseWithJson(w http.ResponseWriter, code int, data any) {
+	dataAsJson, err := json.Marshal(data)
 	if err != nil {
 		logging.LogError("failed to marshal JSON: %s", err)
 		w.WriteHeader(500)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	w.WriteHeader(code)
+	w.Write(dataAsJson)
 }

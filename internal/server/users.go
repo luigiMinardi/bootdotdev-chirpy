@@ -46,15 +46,7 @@ func (cfg *ApiConfig) PostUsersHandler(w http.ResponseWriter, r *http.Request) {
 		IsChirpyRed: user.IsChirpyRed,
 	}
 
-	data, err := json.Marshal(respBody)
-	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(201)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 201, respBody)
 }
 
 // PUT /api/users
@@ -99,13 +91,5 @@ func (cfg *ApiConfig) PutUsersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := json.Marshal(user)
-	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 200, user)
 }

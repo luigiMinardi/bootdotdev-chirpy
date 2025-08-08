@@ -87,15 +87,7 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 		UserID:    chirp.UserID.String(),
 	}
 
-	data, err := json.Marshal(respBody)
-	if err != nil {
-		logging.LogError("failed to marshal JSON", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(201)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 201, respBody)
 }
 
 // GET /api/chirps
@@ -132,15 +124,7 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := json.Marshal(chirps)
-	if err != nil {
-		logging.LogError("failed to marshal JSON", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 200, chirps)
 }
 
 // GET /api/chirps/{chirpID}
@@ -159,15 +143,7 @@ func (cfg *ApiConfig) GetChirpsByIdHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	data, err := json.Marshal(chirp)
-	if err != nil {
-		logging.LogError("failed to marshal JSON", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(200)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	utils.ResponseWithJson(w, 200, chirp)
 }
 
 // DELETE /api/chirps/{chirpID}
