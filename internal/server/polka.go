@@ -20,57 +20,21 @@ func (cfg *ApiConfig) PolkaWebhookHandler(w http.ResponseWriter, r *http.Request
 	}
 	apiKey, err := auth.GetAPIKey(r.Header)
 	if err != nil {
-		logging.LogError("failed to get api key: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You are not authenticated",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You are not authenticated", "failed to get api key", err)
 		return
 	}
 	logging.LogInfo("apiKey: %s", apiKey)
 	logging.LogInfo("cfg apiKey: %s", cfg.polkaKey)
 
 	if apiKey != cfg.polkaKey {
-		logging.LogError("POST /api/polka/webhooks failed to validate api key: %s", apiKey)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You are not authenticated",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You are not authenticated", "POST /api/polka/webhooks failed to validate api key", err)
 		return
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
-		logging.LogError("failed to decode params: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something went wrong",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to decode params", err)
 		return
 	}
 
@@ -81,20 +45,7 @@ func (cfg *ApiConfig) PolkaWebhookHandler(w http.ResponseWriter, r *http.Request
 
 	_, err = cfg.db.UpgradeUserToChirpyRedByID(r.Context(), params.Data.UserID)
 	if err != nil {
-		logging.LogError("failed to retrieve user: %s", err)
-		w.WriteHeader(404)
-		respBody := utils.ReturnError{
-			Error: "This user was deleted or don't exist",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 404, "This user was deleted or don't exist", "failed to retrieve user", err)
 		return
 	}
 

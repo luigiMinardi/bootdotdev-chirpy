@@ -33,7 +33,7 @@ type ApiConfig struct {
 func (cfg *ApiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileServerHits.Add(1)
-		logging.LogInfo("current cfg.fileServerHits: %v", cfg.fileServerHits.Load())
+		logging.LogInfo("current cfg.fileServerHits", cfg.fileServerHits.Load())
 		next.ServeHTTP(w, r)
 	})
 }
@@ -50,7 +50,7 @@ func (cfg *ApiConfig) endpointMetrics(w http.ResponseWriter, r *http.Request) {
   </body>
 </html>`, cfg.fileServerHits.Load()))
 	if err != nil {
-		logging.LogError("/metrics failed to write with error: %v\n", err)
+		logging.LogError("/metrics failed to write with error", err)
 	}
 }
 
@@ -75,7 +75,7 @@ func (cfg *ApiConfig) endpointReset(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("failed to reset db with err: " + err.Error()))
 		return
 	}
-	logging.LogInfo("users reset at env: %s", cfg.platform)
+	logging.LogInfo("users reset at env", cfg.platform)
 	w.WriteHeader(200)
 	cfg.fileServerHits.Store(0)
 	w.Write([]byte("fileServerHits reset to 0 and database reset to initial state."))
@@ -116,12 +116,13 @@ func NewServer() {
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
+		logging.LogInfo("method", r.Method)
 
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(200)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {
-			logging.LogError("/healthz failed to write with error: %v\n", err)
+			logging.LogError("/healthz failed to write with error", err)
 		}
 	})
 	mux.HandleFunc("GET /admin/metrics", apiCfg.endpointMetrics)
@@ -140,8 +141,8 @@ func NewServer() {
 	mux.HandleFunc("POST /api/revoke", apiCfg.RevokeHandler)
 	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.PolkaWebhookHandler)
 
-	logging.LogInfo("HTTP server started on http://localhost%v\n", srv.Addr)
+	log.Printf(logging.LOGINFO+"HTTP server started on http://localhost%v\n", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil {
-		logging.LogError("HTTP Server ListenAndServe error: %v\n", err)
+		logging.LogError("HTTP Server ListenAndServe error", err)
 	}
 }

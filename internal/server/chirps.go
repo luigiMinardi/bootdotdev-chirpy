@@ -27,86 +27,28 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		logging.LogError("failed to get token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You're not logged in.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get token", err)
 		return
 	}
 
 	id, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
-		logging.LogError("POST /api/chirps failed to validate token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Please log in again.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/chirps failed to validate token", err)
 		return
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
-		logging.LogError("failed to decode params: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something went wrong",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to decode params", err)
 		return
 	}
 	if len(params.Body) > 140 {
-		w.WriteHeader(400)
-		respBody := utils.ReturnError{
-			Error: "Chirp is too long",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 400, "Chirp is too long", "chirp is too long", err)
 		return
 	}
 	if params.Body == "" {
-		w.WriteHeader(400)
-		respBody := utils.ReturnError{
-			Error: "Empty \"body\" field",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 400, "Empty \"body\" field", "empty \"body\" field", err)
 		return
 	}
 
@@ -134,19 +76,7 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	chirp, err := cfg.db.CreateChirp(r.Context(), chirpParams)
 	if err != nil {
-		logging.LogError("failed to create chirp: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something went wrong",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to create chirp", err)
 		return
 	}
 	respBody := returnVals{
@@ -159,7 +89,7 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 
 	data, err := json.Marshal(respBody)
 	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
+		logging.LogError("failed to marshal JSON", err)
 		w.WriteHeader(500)
 		return
 	}
@@ -176,27 +106,14 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	var chirps []database.Chirp
 
 	if sort != "asc" && sort != "desc" {
-		logging.LogInfo("sort: %s", sort)
+		logging.LogInfo("sort", sort)
 		sort = "asc"
 	}
 
 	if authorId != "" {
 		authorUid, err := uuid.Parse(authorId)
 		if err != nil {
-			logging.LogError("invalid authorId: %s", err)
-			w.WriteHeader(404)
-			respBody := utils.ReturnError{
-				Error: "Invalid Author ID",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
+			utils.ResponseWithError(w, 404, "Invalid Author ID", "invalid authorId", err)
 			return
 		}
 		params := database.GetAllChirpsFromUserParams{
@@ -205,26 +122,13 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		chirps, err = cfg.db.GetAllChirpsFromUser(r.Context(), params)
 		if err != nil {
-			logging.LogError("failed to retrieve chirps: %s", err)
-			w.WriteHeader(500)
-			respBody := utils.ReturnError{
-				Error: "Something went wrong",
-			}
-
-			data, err := json.Marshal(respBody)
-			if err != nil {
-				logging.LogError("failed to marshal JSON: %s", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
+			utils.ResponseWithError(w, 500, "Something went wrong", "failed to retrieve chirps", err)
 			return
 		}
 	}
 	chirps, err := cfg.db.GetAllChirps(r.Context(), sort)
 	if err != nil {
-		utils.Return500(w, "failed to retrieve chirps", err)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to retrieve chirps", err)
 		return
 	}
 
@@ -245,44 +149,19 @@ func (cfg *ApiConfig) GetChirpsByIdHandler(w http.ResponseWriter, r *http.Reques
 
 	id, err := uuid.Parse(idString)
 	if err != nil {
-		logging.LogError("failed to get uuid: %s", err)
-		respBody := utils.ReturnError{
-			Error: "Invaid \"chirpID\" path parameter",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.WriteHeader(400)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 400, "Invaid \"chirpID\" path parameter", "failed to get uuid", err)
 		return
 	}
 
 	chirp, err := cfg.db.GetChirp(r.Context(), id)
 	if err != nil {
-		logging.LogError("failed to retrieve chirp: %s", err)
-		w.WriteHeader(404)
-		respBody := utils.ReturnError{
-			Error: "This chirp was deleted or don't exist",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 404, "This chirp was deleted or don't exist", "failed to retrieve chirp", err)
 		return
 	}
 
 	data, err := json.Marshal(chirp)
 	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
+		logging.LogError("failed to marshal JSON", err)
 		w.WriteHeader(500)
 		return
 	}
@@ -295,37 +174,13 @@ func (cfg *ApiConfig) GetChirpsByIdHandler(w http.ResponseWriter, r *http.Reques
 func (cfg *ApiConfig) DeleteChirpsByIdHandler(w http.ResponseWriter, r *http.Request) {
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		logging.LogError("failed to get token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You're not logged in.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get token", err)
 		return
 	}
 
 	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
-		logging.LogError("PUT /api/users failed to validate token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Please log in again.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Please log in again.", "PUT /api/users failed to validate token", err)
 		return
 	}
 
@@ -333,19 +188,7 @@ func (cfg *ApiConfig) DeleteChirpsByIdHandler(w http.ResponseWriter, r *http.Req
 
 	chirpId, err := uuid.Parse(idString)
 	if err != nil {
-		logging.LogError("failed to get uuid: %s", err)
-		respBody := utils.ReturnError{
-			Error: "Invaid \"chirpID\" path parameter",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.WriteHeader(400)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 400, "Invaid \"chirpID\" path parameter", "failed to get uuid", err)
 		return
 	}
 
@@ -356,20 +199,7 @@ func (cfg *ApiConfig) DeleteChirpsByIdHandler(w http.ResponseWriter, r *http.Req
 
 	chirp, err := cfg.db.GetChirp(r.Context(), chirpId)
 	if err != nil {
-		logging.LogError("failed to retrieve chirp: %s", err)
-		w.WriteHeader(404)
-		respBody := utils.ReturnError{
-			Error: "This chirp was deleted or don't exist",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 404, "This chirp was deleted or don't exist", "failed to retrieve chirp", err)
 		return
 	}
 	if chirp.UserID != userId {
@@ -379,23 +209,10 @@ func (cfg *ApiConfig) DeleteChirpsByIdHandler(w http.ResponseWriter, r *http.Req
 
 	deletedChirp, err := cfg.db.DeleteChirp(r.Context(), dta)
 	if err != nil {
-		logging.LogError("failed to retrieve chirp: %s", err)
-		w.WriteHeader(404)
-		respBody := utils.ReturnError{
-			Error: "This chirp was deleted or don't exist",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 404, "This chirp was deleted or don't exist", "failed to retrieve chirp", err)
 		return
 	}
-	logging.LogInfo("removed: %s", deletedChirp)
+	logging.LogInfo("removed", deletedChirp)
 
 	w.WriteHeader(204)
 	w.Header().Set("Content-Type", "application/json")

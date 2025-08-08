@@ -30,82 +30,31 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
-		logging.LogError("failed to decode params: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something went wrong",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to decode params", err)
 		return
 	}
 
 	user, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
 	if err != nil {
-		logging.LogError("failed to retrieve user: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Incorrect email or password",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Incorrect email or password", "failed to retrieve user", err)
 		return
 	}
 
 	err = auth.CheckPasswordHash(params.Password, user.HashedPassword)
 	if err != nil {
-		logging.LogError("failed to retrieve user: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Incorrect email or password",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Incorrect email or password", "failed to retrieve user", err)
 		return
 	}
 
 	userJWT, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Hour)
 	if err != nil {
-		logging.LogError("failed to generate user jwt: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something wrong happened please contact the admin.",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something wrong happened please contact the admin.", "failed to generate user jwt", err)
 		return
 	}
 
 	refreshTokenToken, err := auth.MakeRefreshToken()
 	if err != nil {
-		logging.LogError("refresh token failed to be generated: %s", err)
+		logging.LogError("refresh token failed to be generated", err)
 	}
 
 	refreshTokenParams := database.CreateRefreshTokenParams{
@@ -115,19 +64,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	refreshToken, err := cfg.db.CreateRefreshToken(r.Context(), refreshTokenParams)
 	if err != nil {
-		logging.LogError("failed to create refreshToken: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something went wrong",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something went wrong", "failed to create refreshToken", err)
 		return
 	}
 
@@ -143,7 +80,7 @@ func (cfg *ApiConfig) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := json.Marshal(respBody)
 	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
+		logging.LogError("failed to marshal JSON", err)
 		w.WriteHeader(500)
 		return
 	}
@@ -160,70 +97,21 @@ func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 
 	refreshTokenToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		logging.LogError("failed to get refresh token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You're not logged in.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get refresh token", err)
 		return
 	}
 	refreshToken, err := cfg.db.GetRefreshToken(r.Context(), refreshTokenToken)
 	if err != nil {
-		logging.LogError("POST /api/refresh failed to find refresh token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Please log in again.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/refresh failed to find refresh token", err)
 		return
 	}
 	if time.Now().Compare(refreshToken.ExpiresAt) != -1 || refreshToken.RevokedAt.Valid == true {
-		logging.LogError("refresh token expired org got revoked at: %s", refreshToken.RevokedAt.Time)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Please log in again.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Please log in again.", "refresh token expired or got revoked at", err)
 		return
 	}
 	token, err := auth.MakeJWT(refreshToken.UserID, cfg.jwtSecret, time.Hour)
 	if err != nil {
-		logging.LogError("failed to generate user jwt: %s", err)
-		w.WriteHeader(500)
-		respBody := utils.ReturnError{
-			Error: "Something wrong happened please contact the admin.",
-		}
-
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 500, "Something wrong happened please contact the admin.", "failed to generate user jwt", err)
 		return
 	}
 	respBody := returnVals{
@@ -231,7 +119,7 @@ func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := json.Marshal(respBody)
 	if err != nil {
-		logging.LogError("failed to marshal JSON: %s", err)
+		logging.LogError("failed to marshal JSON", err)
 		w.WriteHeader(500)
 		return
 	}
@@ -244,36 +132,12 @@ func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 func (cfg *ApiConfig) RevokeHandler(w http.ResponseWriter, r *http.Request) {
 	refreshTokenToken, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		logging.LogError("failed to get refresh token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "You're not logged in.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get refresh token", err)
 		return
 	}
 	err = cfg.db.RevokeRefreshToken(r.Context(), refreshTokenToken)
 	if err != nil {
-		logging.LogError("POST /api/revoke failed to find refresh token: %s", err)
-		w.WriteHeader(401)
-		respBody := utils.ReturnError{
-			Error: "Please log in again.",
-		}
-		data, err := json.Marshal(respBody)
-		if err != nil {
-			logging.LogError("failed to marshal JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/revoke failed to find refresh token", err)
 		return
 	}
 	w.WriteHeader(204)

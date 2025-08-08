@@ -24,11 +24,11 @@ type UserWithNoPassword struct {
 	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
-func Return500(w http.ResponseWriter, logErrMsg string, err any) {
+func ResponseWithError(w http.ResponseWriter, code int, errorMsg, logErrMsg string, err any) {
 	logging.LogError(logErrMsg, err)
-	w.WriteHeader(500)
+	w.WriteHeader(code)
 	respBody := ReturnError{
-		Error: "Something went wrong",
+		Error: errorMsg,
 	}
 
 	data, err := json.Marshal(respBody)
