@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/auth"
-	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/utils"
 )
 
@@ -23,8 +22,6 @@ func (cfg *ApiConfig) PolkaWebhookHandler(w http.ResponseWriter, r *http.Request
 		utils.ResponseWithError(w, 401, "You are not authenticated", "failed to get api key", err)
 		return
 	}
-	logging.LogInfo("apiKey: %s", apiKey)
-	logging.LogInfo("cfg apiKey: %s", cfg.polkaKey)
 
 	if apiKey != cfg.polkaKey {
 		utils.ResponseWithError(w, 401, "You are not authenticated", "POST /api/polka/webhooks failed to validate api key", err)

@@ -89,8 +89,6 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	authorId := r.URL.Query().Get("author_id")
 	sort := r.URL.Query().Get("sort")
 
-	var chirps []database.Chirp
-
 	if sort != "asc" && sort != "desc" {
 		logging.LogInfo("sort", sort)
 		sort = "asc"
@@ -106,12 +104,15 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 			UserID:    authorUid,
 			SortOrder: sort,
 		}
-		chirps, err = cfg.db.GetAllChirpsFromUser(r.Context(), params)
+		chirps, err := cfg.db.GetAllChirpsFromUser(r.Context(), params)
 		if err != nil {
 			utils.ResponseWithError(w, 500, "Something went wrong", "failed to retrieve chirps", err)
 			return
 		}
+		utils.ResponseWithJson(w, 200, chirps)
+		return
 	}
+
 	chirps, err := cfg.db.GetAllChirps(r.Context(), sort)
 	if err != nil {
 		utils.ResponseWithError(w, 500, "Something went wrong", "failed to retrieve chirps", err)
