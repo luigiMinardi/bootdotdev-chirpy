@@ -125,6 +125,9 @@ func (cfg *ApiConfig) GetChirpsHandler(w http.ResponseWriter, r *http.Request) {
 func (cfg *ApiConfig) GetChirpsByIdHandler(w http.ResponseWriter, r *http.Request) {
 	idString := r.PathValue("chirpID")
 
+	logging.LogError("erroring", "this failed")
+	logging.LogInfo("infoing", "this infoed")
+	logging.LogWarn("warning", "this warned")
 	id, err := uuid.Parse(idString)
 	if err != nil {
 		utils.ResponseWithError(w, 400, "Invaid \"chirpID\" path parameter", "failed to get uuid", err)
