@@ -94,11 +94,11 @@ func (cfg *ApiConfig) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	refreshToken, err := cfg.db.GetRefreshToken(r.Context(), refreshTokenToken)
 	if err != nil {
-		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/refresh failed to find refresh token", err)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "POST /api/refresh failed to find refresh token", err)
 		return
 	}
 	if time.Now().Compare(refreshToken.ExpiresAt) != -1 || refreshToken.RevokedAt.Valid == true {
-		utils.ResponseWithError(w, 401, "Please log in again.", "refresh token expired or got revoked at", err)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "refresh token expired or got revoked at", err)
 		return
 	}
 	token, err := auth.MakeJWT(refreshToken.UserID, cfg.jwtSecret, time.Hour)
@@ -121,7 +121,7 @@ func (cfg *ApiConfig) RevokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	err = cfg.db.RevokeRefreshToken(r.Context(), refreshTokenToken)
 	if err != nil {
-		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/revoke failed to find refresh token", err)
+		utils.ResponseWithError(w, 401, "You're not logged in.", "POST /api/revoke failed to find refresh token", err)
 		return
 	}
 	w.WriteHeader(204)

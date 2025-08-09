@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/luigiMinardi/bootdotdev-chirpy/internal/auth"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/utils"
@@ -25,15 +24,10 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 		UserID    string `json:"user_id"`
 	}
 
-	token, err := auth.GetBearerToken(r.Header)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get token", err)
-		return
-	}
-
-	id, err := auth.ValidateJWT(token, cfg.jwtSecret)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "Please log in again.", "POST /api/chirps failed to validate token", err)
+	idVal := r.Context().Value("id")
+	userId, ok := idVal.(uuid.UUID)
+	if !ok {
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get id from middleware", r.Context().Value("id"))
 		return
 	}
 
@@ -44,11 +38,11 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if len(params.Body) > 140 {
-		utils.ResponseWithError(w, 400, "Chirp is too long", "chirp is too long", err)
+		utils.ResponseWithError(w, 400, "Chirp is too long", "chirp is too long", params.Body)
 		return
 	}
 	if params.Body == "" {
-		utils.ResponseWithError(w, 400, "Empty \"body\" field", "empty \"body\" field", err)
+		utils.ResponseWithError(w, 400, "Empty \"body\" field", "empty \"body\" field", params)
 		return
 	}
 
@@ -72,7 +66,7 @@ func (cfg *ApiConfig) PostChirpsHandler(w http.ResponseWriter, r *http.Request) 
 
 	chirpParams := database.CreateChirpParams{
 		Body:   params.Body,
-		UserID: id,
+		UserID: userId,
 	}
 	chirp, err := cfg.db.CreateChirp(r.Context(), chirpParams)
 	if err != nil {
@@ -148,15 +142,11 @@ func (cfg *ApiConfig) GetChirpsByIdHandler(w http.ResponseWriter, r *http.Reques
 
 // DELETE /api/chirps/{chirpID}
 func (cfg *ApiConfig) DeleteChirpsByIdHandler(w http.ResponseWriter, r *http.Request) {
-	token, err := auth.GetBearerToken(r.Header)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get token", err)
-		return
-	}
 
-	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "Please log in again.", "PUT /api/users failed to validate token", err)
+	idVal := r.Context().Value("id")
+	userId, ok := idVal.(uuid.UUID)
+	if !ok {
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get id from middleware", r.Context().Value("id"))
 		return
 	}
 

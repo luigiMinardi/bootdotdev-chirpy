@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/auth"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/database"
-	"github.com/luigiMinardi/bootdotdev-chirpy/internal/logging"
 	"github.com/luigiMinardi/bootdotdev-chirpy/internal/utils"
 )
 
@@ -56,15 +56,10 @@ func (cfg *ApiConfig) PutUsersHandler(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 
-	token, err := auth.GetBearerToken(r.Header)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get token", err)
-		return
-	}
-
-	id, err := auth.ValidateJWT(token, cfg.jwtSecret)
-	if err != nil {
-		utils.ResponseWithError(w, 401, "Please log in again.", "PUT /api/users failed to validate token", err)
+	idVal := r.Context().Value("id")
+	id, ok := idVal.(uuid.UUID)
+	if !ok {
+		utils.ResponseWithError(w, 401, "You're not logged in.", "failed to get id from middleware", r.Context().Value("id"))
 		return
 	}
 
