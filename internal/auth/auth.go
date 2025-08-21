@@ -40,6 +40,17 @@ func CheckPasswordHash(password, hash string) error {
 	return nil
 }
 
+// MakeJWT should have an User UUID as "userID", the ApiConfig.jwtToken
+// ([github.com/luigiMinardi/bootdotdev-chirpy/internal/server.ApiConfig].jwtToken)
+// as the "tokenSecret" and a time.Duration that isnt more than a day as "expiresIn"
+// to make sure the JWT is propperly done and is secure.
+//
+// Returns a new signed JsonWebToken with an Issuer, IssuedAt, ExpiresAt and Subject.
+//   - token signature secret: "tokenSecret"
+//   - iss (Issuer): [TokenIssuerAPI]
+//   - iat (IssuedAt): time.Now()
+//   - exp (ExpiresAt): "expiresIn"
+//   - sub (Subject): "userID"
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    TokenIssuerAPI,
@@ -56,6 +67,9 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 	return signedToken, nil
 }
 
+// Given a token and it's signed secret
+// ([github.com/luigiMinardi/bootdotdev-chirpy/internal/server.ApiConfig].jwtToken)
+// return the token Subject (user UUID) if the secret, subject and issuer are valid.
 func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	claims := jwt.RegisteredClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, &claims, func(t *jwt.Token) (any, error) {
@@ -63,12 +77,6 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	})
 	if err != nil {
 		logging.LogError("ValidateJWT parseWithClaims errored with: %s", err)
-		return uuid.Nil, err
-	}
-
-	subject, err := token.Claims.GetSubject()
-	if err != nil {
-		logging.LogError("ValidateJWT Claims GetSubject errored with: %s", err)
 		return uuid.Nil, err
 	}
 
@@ -81,6 +89,12 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	if issuer != TokenIssuerAPI {
 		logging.LogError("ValidateJWT returned wrong issuer: %s", issuer)
 		return uuid.Nil, fmt.Errorf("Issuer '%s' is not the API issuer '%s'.", issuer, TokenIssuerAPI)
+	}
+
+	subject, err := token.Claims.GetSubject()
+	if err != nil {
+		logging.LogError("ValidateJWT Claims GetSubject errored with: %s", err)
+		return uuid.Nil, err
 	}
 
 	uid, err := uuid.Parse(subject)

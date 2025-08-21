@@ -21,7 +21,7 @@ type ApiConfig struct {
 	platform string
 	// data base
 	db *database.Queries
-	// jwt secret
+	// jwt secret generated with "openssl rand -base64 64"
 	jwtSecret string
 	// polka key
 	polkaKey string
